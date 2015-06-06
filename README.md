@@ -7,6 +7,7 @@ Currently, Kangaroo includes:
 
 1. A scalable [Kafka input format](#kafka)
 2. Several [FileInputFormats optimized for S3 input data](#s3).
+3. A input format for [distributed task execution](#wrtiablevalue)
 
 # Setting up Kangaroo
 
@@ -137,7 +138,7 @@ biggest performance boost because the input format takes advantage of `AmazonS3.
 files that shared a common prefix, our input format discovered splits in 10 seconds, whereas the Hadoop
 `FileInputFormat` took 730 seconds.
 
-## Job setup
+### Job setup
 
 You use these input formats *exactly* the way you normally use `SequenceFileInputFormat` or `TextFileInputFormat`,
 except you specify our S3 input format on the job settings:
@@ -171,3 +172,42 @@ SequenceFileInputFormat.addInputPath(job, new Path("s3n://my-bucket/other/path")
 | `S3TextInputFormatMRV1` | `org.apache.hadoop.mapred.SequenceFileInputFormat` |
 
 We've included MRV1 versions of these input formats, which we use for S3-backed Hive tables.
+
+## <a name="wrtiablevalue"></a>Distributed task execution using WritableValueInputFormat
+
+When multiple threads in a single JVM won't suffice, Kangaroo comes to the Rescue.  The `WritableValueInputFormat` allows
+you to distribute computational work across a configurable number of map tasks in Map/Reduce.
+
+### Create a Mapper
+
+Your mapper will take a `NullWritable` key, and a value that must implement `Writable`.
+
+```java
+public static class MyComputationalMapper extends Mapper<NullWritable, UnitOfWork, KEY_OUT, VALUE_OUT> {
+
+    @Override
+    protected void map(final NullWritable key, final UnitOfWork value, final Context context) throws IOException, InterruptedException {
+        // process UnitOfWork, and output the result(s) if you want to reduce it
+    }
+}
+
+```
+### Job setup
+
+To setup a `Job`, calculate the units of work and specify exactly how many inputs each map task gets.
+
+```java
+// compute the work to be done
+final List<UnitOfWork> workToBeDone = ...;
+
+// Create the job and setup your input, specifying 50 units of work per mapper.
+final Job job = Job.getInstance(getConf(), "my_job");
+job.setInputFormatClass(WritableValueInputFormat.class);
+WritableValueInputFormat.setupInput(workToBeDone, UnitOfWork.class, 50, job);
+
+// If you want to add EVEN MORE concurrency to your job, use the MultithreadedMapper!
+job.setMapperClass(MultithreadedMapper.class);
+MultithreadedMapper.setMapperClass(job, MyComputationalMapper.class); // your actual mapper
+MultithreadedMapper.setNumberOfThreads(job, 10); // 10 threads per mapper
+
+```
