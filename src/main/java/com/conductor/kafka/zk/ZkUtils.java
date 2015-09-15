@@ -18,13 +18,14 @@ import static java.lang.String.format;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.util.List;
+import java.util.*;
 
 import org.I0Itec.zkclient.ZkClient;
 import org.I0Itec.zkclient.exception.ZkMarshallingError;
 import org.I0Itec.zkclient.exception.ZkNoNodeException;
 import org.I0Itec.zkclient.serialize.ZkSerializer;
 import org.apache.hadoop.conf.Configuration;
+import org.codehaus.jackson.map.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,6 +54,7 @@ import com.google.common.collect.Ranges;
 public class ZkUtils implements Closeable {
 
     private static Logger LOG = LoggerFactory.getLogger(ZkUtils.class);
+    private static ObjectMapper mapper = new ObjectMapper();
 
     private final ZkClient client;
     private final String zkRoot;
@@ -65,7 +67,7 @@ public class ZkUtils implements Closeable {
 
     /**
      * Creates a Zookeeper client.
-     * 
+     *
      * @param zkConnectionString
      *            the connection string for Zookeeper, e.g. {@code zk-1.com:2181,zk-2.com:2181}.
      * @param zkRoot
@@ -76,13 +78,13 @@ public class ZkUtils implements Closeable {
      *            Zookeeper connection timeout for this client.
      */
     public ZkUtils(final String zkConnectionString, final String zkRoot, final int sessionTimeout,
-            final int connectionTimeout) {
+                   final int connectionTimeout) {
         this(new ZkClient(zkConnectionString, sessionTimeout, connectionTimeout, new StringSerializer()), zkRoot);
     }
 
     /**
      * Creates a Zookeeper client based on the settings in {@link Configuration}.
-     * 
+     *
      * @param config
      *            config with the Zookeeper settings in it.
      * @see KafkaInputFormat#getZkConnect(org.apache.hadoop.conf.Configuration)
@@ -99,7 +101,7 @@ public class ZkUtils implements Closeable {
 
     /**
      * Closes the Zookeeper client
-     * 
+     *
      * @throws IOException
      */
     @Override
@@ -109,25 +111,28 @@ public class ZkUtils implements Closeable {
 
     /**
      * Gets the {@link Broker} by ID if it exists, {@code null} otherwise.
-     * 
+     *
      * @param id
      *            the broker id.
      * @return a {@link Broker} if it exists, {@code null} otherwise.
      */
-    public Broker getBroker(final Integer id) {
-        String data = client.readData(getBrokerIdPath(id), true);
-        if (!Strings.isNullOrEmpty(data)) {
-            LOG.info("Broker " + id + " " + data);
-            // broker_ip_address-latest_offset:broker_ip_address:broker_port
-            final String[] brokerInfoTokens = data.split(":");
-            return new Broker(brokerInfoTokens[1], Integer.parseInt(brokerInfoTokens[2]), id);
+    public Broker getBroker(Integer id) {
+        try {
+            String data = client.readData(getBrokerIdPath(id), true);
+            if (!Strings.isNullOrEmpty(data)) {
+                LOG.info("Broker " + id + " " + data);
+                BrokerJson brokerJson = mapper.readValue(data, BrokerJson.class);
+                return new Broker(brokerJson.getHost(), brokerJson.getPort(), id);
+            }
+        }catch (Exception e){
+            LOG.error(e.getMessage(), e);
         }
         return null;
     }
 
     /**
      * Gets all of the {@link Broker}s in this Kafka cluster.
-     * 
+     *
      * @return all of the {@link Broker}s in this Kafka cluster.
      */
     public List<Broker> getBrokers() {
@@ -141,28 +146,50 @@ public class ZkUtils implements Closeable {
 
     /**
      * A {@link List} of all the {@link Partition} for a given {@code topic}.
-     * 
+     *
      * @param topic
      *            the topic.
      * @return all the {@link Partition} for a given {@code topic}.
      */
     public List<Partition> getPartitions(final String topic) {
+
         final List<Partition> partitions = Lists.newArrayList();
-        final List<String> brokersHostingTopic = getChildrenParentMayNotExist(getTopicBrokerIdSubPath(topic));
-        for (final String brokerId : brokersHostingTopic) {
-            final int bId = Integer.parseInt(brokerId);
-            final String parts = client.readData(getTopicBrokerIdPath(topic, bId));
-            final Broker brokerInfo = getBroker(bId);
-            for (int i = 0; i < Integer.valueOf(parts); i++) {
-                partitions.add(new Partition(topic, i, brokerInfo));
+        Map<Integer, Broker> brokerHashMap = new HashMap<>();
+        Broker currentBroker;
+
+        try {
+            // read the data about all partitions
+            final String topicPartitionsString = client.readData(getTopicBrokerIdSubPath(topic));
+            final TopicJson topicPartitions = mapper.readValue(topicPartitionsString, TopicJson.class);
+
+            // iterate over parttions
+            Iterator it = topicPartitions.getPartitions().entrySet().iterator();
+            while (it.hasNext()) {
+                Map.Entry<Integer, ArrayList<Integer>> pair = (Map.Entry) it.next();
+                ArrayList<Integer> brokerIds = pair.getValue();
+
+                // iterate over all broker for a partition
+                for (Integer brokerId : brokerIds) {
+
+                    // get info about partition
+                    // we save each broker info into a map, to not make a call to zookeeper for the same broker id
+                    currentBroker = brokerHashMap.get(brokerId);
+                    if(currentBroker == null){
+                        currentBroker = getBroker(brokerId);
+                        brokerHashMap.put(brokerId, currentBroker);
+                    }
+                    partitions.add(new Partition(topic, pair.getKey(), currentBroker));
+                }
             }
+        }catch (Exception e){
+            LOG.error(e.getMessage(), e);
         }
         return partitions;
     }
 
     /**
      * Checks whether the provided partition exists on the {@link Broker}.
-     * 
+     *
      * @param broker
      *            the broker.
      * @param topic
@@ -178,7 +205,7 @@ public class ZkUtils implements Closeable {
 
     /**
      * Gets the last commit made by the {@code group} on the {@code topic-partition}.
-     * 
+     *
      * @param group
      *            the consumer group.
      * @param partition
@@ -201,7 +228,7 @@ public class ZkUtils implements Closeable {
      * If {@code temp == true}, this will "temporarily" set the offset, in which case the user must call
      * {@link #commit(String, String)}. This is useful if a user wants to temporarily commit an offset for a topic
      * partition, and then commit it once <em>all</em> topic partitions have completed.
-     * 
+     *
      * @param group
      *            the consumer group.
      * @param partition
@@ -224,7 +251,7 @@ public class ZkUtils implements Closeable {
 
     /**
      * Commits any temporary offsets of the {@code group} for a given {@code topic}.
-     * 
+     *
      * @param group
      *            the consumer group.
      * @param topic
@@ -242,14 +269,11 @@ public class ZkUtils implements Closeable {
     }
 
     private List<Partition> getPartitionsWithTempOffsets(final String topic, final String group) {
-        final List<String> brokerPartIds = getChildrenParentMayNotExist(getTempOffsetsSubPath(group, topic));
-        return Lists.transform(brokerPartIds, new Function<String, Partition>() {
+        final List<String> partIds = getChildrenParentMayNotExist(getTempOffsetsSubPath(group, topic));
+        return Lists.transform(partIds, new Function<String, Partition>() {
             @Override
-            public Partition apply(final String brokerPartId) {
-                // brokerPartId = brokerId-partId
-                final String[] brokerIdPartId = brokerPartId.split("-");
-                final Broker broker = getBroker(Integer.parseInt(brokerIdPartId[0]));
-                return new Partition(topic, Integer.parseInt(brokerIdPartId[1]), broker);
+            public Partition apply(final String partIds) {
+                return new Partition(topic, Integer.parseInt(partIds), null);
             }
         });
     }
@@ -261,6 +285,15 @@ public class ZkUtils implements Closeable {
         } catch (final ZkNoNodeException e) {
             return Lists.newArrayList();
         }
+    }
+
+    public String getDataByZkPath(String zkPath) {
+        return client.readData(createPathWithZkRoot(zkPath), true);
+    }
+
+    @VisibleForTesting
+    String createPathWithZkRoot(String zkPath) {
+        return format("%s/%s", zkRoot, zkPath);
     }
 
     @VisibleForTesting

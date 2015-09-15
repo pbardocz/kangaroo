@@ -14,27 +14,25 @@
 
 package com.conductor.kafka.hadoop;
 
-import static java.lang.String.format;
-import static org.junit.Assert.assertEquals;
-import static org.mockito.Mockito.*;
-
-import java.util.Arrays;
-import java.util.List;
-
+import com.google.common.collect.Lists;
+import com.conductor.kafka.Broker;
+import com.conductor.kafka.Partition;
+import com.conductor.kafka.zk.ZkUtils;
 import kafka.api.OffsetRequest;
 import kafka.javaapi.OffsetResponse;
 import kafka.javaapi.consumer.SimpleConsumer;
-
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.InputSplit;
 import org.apache.hadoop.mapreduce.Job;
 import org.junit.Assert;
 import org.junit.Test;
 
-import com.conductor.kafka.Broker;
-import com.conductor.kafka.Partition;
-import com.conductor.kafka.zk.ZkUtils;
-import com.google.common.collect.Lists;
+import java.util.Arrays;
+import java.util.List;
+
+import static java.lang.String.format;
+import static org.junit.Assert.assertEquals;
+import static org.mockito.Mockito.*;
 
 /**
  * @author cgreen
@@ -113,21 +111,21 @@ public class KafkaInputFormatTest {
         assertEquals("127.0.0.1", broker1.getHost());
         assertEquals(9092, broker1.getPort());
         assertEquals(1, broker1.getId());
-        assertEquals("1-0", split1.getPartition().getBrokerPartition());
+        assertEquals("0", split1.getPartition().getBrokerPartition());
         assertEquals(0, split1.getPartition().getPartId());
-        assertEquals(10l, split1.getStartOffset());
+        assertEquals(11l, split1.getStartOffset());
         assertEquals(20l, split1.getEndOffset());
         assertEquals("topic", split1.getPartition().getTopic());
 
         final KafkaInputSplit split2 = (KafkaInputSplit) result.get(1);
-        assertEquals(20l, split2.getStartOffset());
+        assertEquals(21l, split2.getStartOffset());
         assertEquals(30l, split2.getEndOffset());
-        assertEquals("1-1", split2.getPartition().getBrokerPartition());
+        assertEquals("1", split2.getPartition().getBrokerPartition());
 
         final KafkaInputSplit split3 = (KafkaInputSplit) result.get(2);
-        assertEquals(0l, split3.getStartOffset());
+        assertEquals(1l, split3.getStartOffset());
         assertEquals(20l, split3.getEndOffset());
-        assertEquals("1-1", split3.getPartition().getBrokerPartition());
+        assertEquals("1", split3.getPartition().getBrokerPartition());
 
         // verify one and only one call to getConsumer - should get the cached consumer second time around
         verify(inputFormat, times(1)).getConsumer(broker);

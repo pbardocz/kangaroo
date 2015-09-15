@@ -184,7 +184,8 @@ public class KafkaInputFormat extends InputFormat<LongWritable, BytesWritable> {
                         getMaxSplitsPerPartition(conf));
                 for (int i = 0; i < offsets.size() - 1; i++) {
                     // ( offsets in descending order )
-                    final long start = offsets.get(i + 1);
+                    // we add 1 to the start offset, as we already consumed the i+1 th offset's message
+                    final long start = offsets.get(i + 1) + 1;
                     final long end = offsets.get(i);
                     // since the offsets are in descending order, the first offset in the list is the largest offset for
                     // the current partition. This split will be in charge of committing the offset for this partition.
@@ -210,8 +211,7 @@ public class KafkaInputFormat extends InputFormat<LongWritable, BytesWritable> {
         // TODO: take advantage of new API, which allows you to request offsets for multiple topic-partitions.
 
         // all offsets that exist for this partition (in descending order)
-        final OffsetRequest allReq = toOffsetRequest(topic, partitionNum, kafka.api.OffsetRequest.LatestTime(),
-                Integer.MAX_VALUE);
+        final OffsetRequest allReq = toOffsetRequest(topic, partitionNum, kafka.api.OffsetRequest.LatestTime(), Integer.MAX_VALUE);
         final OffsetResponse allOffsetsResponse = consumer.getOffsetsBefore(allReq);
         final long[] allOffsets = allOffsetsResponse.offsets(topic, partitionNum);
 
@@ -219,16 +219,18 @@ public class KafkaInputFormat extends InputFormat<LongWritable, BytesWritable> {
         final OffsetRequest requestBeforeAsOf = toOffsetRequest(topic, partitionNum, asOfTime, 1);
         final OffsetResponse offsetsBeforeAsOfResponse = consumer.getOffsetsBefore(requestBeforeAsOf);
         final long[] offsetsBeforeAsOf = offsetsBeforeAsOfResponse.offsets(topic, partitionNum);
+
         final long includeAfter = offsetsBeforeAsOf.length == 1 ? offsetsBeforeAsOf[0] : 0;
 
         // note that the offsets are in descending order
         List<Long> result = Lists.newArrayList();
         for (final long offset : allOffsets) {
-            if (offset > lastCommit && offset > includeAfter) {
+            if (offset > lastCommit && offset >= includeAfter) {
                 result.add(offset);
             } else {
-                // we add "lastCommit" iff it is after "includeAfter"
-                if (lastCommit > includeAfter) {
+                // we add "lastCommit" iff it is after "includeAfter" or
+                // if no commits exist (lastCommit == -1) aka no read was made for this topic with current consumerId
+                if (lastCommit == -1 || lastCommit > includeAfter) {
                     result.add(lastCommit);
                 }
                 // we can break out of loop here bc offsets are in desc order, and we've hit the latest one to include

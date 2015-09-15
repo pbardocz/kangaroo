@@ -148,6 +148,8 @@ public class KafkaRecordReader extends RecordReader<LongWritable, BytesWritable>
             value.set(buffer.array(), buffer.arrayOffset(), message.payloadSize());
             key.set(msgOffset);
             pos = msgOffset;
+            // we count the kafka offset
+            currentOffset = msgOffset + 1;
             return true;
         }
         return false;
@@ -164,7 +166,10 @@ public class KafkaRecordReader extends RecordReader<LongWritable, BytesWritable>
     boolean continueItr() {
         final long remaining = end - currentOffset;
         if (!canCallNext() && remaining > 0) {
-            final int theFetchSize = (fetchSize > remaining) ? (int) remaining : fetchSize;
+            // commented out theFetchSize computation, because for some reason, when theFetchSize <= 174
+            // the messages are not retrieved any more
+//            final int theFetchSize = (fetchSize > remaining) ? (int) remaining : fetchSize;
+            final int theFetchSize = fetchSize;
             LOG.debug(String.format("%s fetching %d bytes starting at offset %d", split.toString(), theFetchSize,
                     currentOffset));
             final String topic = split.getPartition().getTopic();
@@ -182,9 +187,10 @@ public class KafkaRecordReader extends RecordReader<LongWritable, BytesWritable>
 
             final ByteBufferMessageSet byteBufferMessageSet = fetchResponse.messageSet(topic, partition);
             currentMessageItr = byteBufferMessageSet.iterator();
-            currentOffset += byteBufferMessageSet.validBytes();
         }
-        return canCallNext();
+
+        // if we still have data in the buffer, but we reached the end offset, we stop the read, to have constancy
+        return canCallNext() && remaining > 0;
     }
 
     @VisibleForTesting

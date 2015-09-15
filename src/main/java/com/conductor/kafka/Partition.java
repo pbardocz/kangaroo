@@ -73,7 +73,9 @@ public class Partition implements Writable {
      * @return {@code broker_id-partition_id}
      */
     public String getBrokerPartition() {
-        return String.format("%d-%d", broker.getId(), partId);
+        // we want only the partitionId
+        // return String.format("%d-%d", broker.getId(), partId);
+        return String.format("%d", partId);
     }
 
     /**

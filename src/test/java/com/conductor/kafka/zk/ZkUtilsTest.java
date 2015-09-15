@@ -61,7 +61,7 @@ public class ZkUtilsTest {
     public void testGetBrokerId() throws Exception {
         // normal case
         final int brokerId = 1;
-        when(client.readData("/brokers/ids/" + brokerId, true)).thenReturn("127.0.0.1-123456789:127.0.0.1:9092");
+        when(client.readData("/brokers/ids/" + brokerId, true)).thenReturn("{\"jmx_port\":9999,\"timestamp\":\"1438181977184\",\"host\":\"127.0.0.1\",\"version\":1,\"port\":9092}");
         final Broker broker = zk.getBroker(brokerId);
         assertEquals("127.0.0.1", broker.getHost());
         assertEquals(9092, broker.getPort());
@@ -90,26 +90,23 @@ public class ZkUtilsTest {
 
     @Test
     public void testPartitions() throws Exception {
-        final Broker broker1 = new Broker("localhost", 9092, 1);
-        final Broker broker2 = new Broker("localhost", 9092, 2);
-        final List<String> brokerIds = Lists.newArrayList("1", "2");
+        final Broker broker1 = new Broker("localhost", 9092, 0);
+        final Broker broker2 = new Broker("localhost", 9092, 1);
+        final List<Broker> brokerList = Lists.newArrayList(broker1, broker2);
         final String brokerTopicPath = "/brokers/topics/the_topic";
+        final String brokerPartitionInfo = "{\"version\":1,\"partitions\":{\"0\":[0],\"1\":[1],\"2\":[0],\"3\":[1]}}";
 
-        doReturn(brokerIds).when(zk).getChildrenParentMayNotExist(brokerTopicPath);
-        doReturn(broker1).when(zk).getBroker(1);
-        doReturn(broker2).when(zk).getBroker(2);
+        when(client.readData(brokerTopicPath)).thenReturn(brokerPartitionInfo);
 
-        when(client.readData("/brokers/topics/the_topic/1")).thenReturn("5");
-        when(client.readData("/brokers/topics/the_topic/2")).thenReturn("5");
+        doReturn(broker1).when(zk).getBroker(0);
+        doReturn(broker2).when(zk).getBroker(1);
 
         final List<Partition> result = zk.getPartitions("the_topic");
-        assertEquals(10, result.size());
+        assertEquals(4, result.size());
 
-        for (int i = 0; i < 5; ++i) {
-            final Partition part1 = new Partition("the_topic", i, broker1);
-            final Partition part2 = new Partition("the_topic", i, broker2);
+        for (int i = 0; i < 4; ++i) {
+            final Partition part1 = new Partition("the_topic", i, brokerList.get(i%2));
             assertTrue(result.contains(part1));
-            assertTrue(result.contains(part2));
         }
     }
 
@@ -161,15 +158,13 @@ public class ZkUtilsTest {
 
     @Test
     public void testCommit() throws Exception {
-        final Broker broker = new Broker("localhost", 9092, 1);
-        final Partition partition1 = new Partition("the_topic", 0, broker);
-        final Partition partition2 = new Partition("the_topic", 1, broker);
-        final List<String> brokerIds = Lists.newArrayList("1-0", "1-1");
+        final Partition partition1 = new Partition("the_topic", 0, null);
+        final Partition partition2 = new Partition("the_topic", 1, null);
+        final List<String> brokerIds = Lists.newArrayList("0", "1");
         final String brokerTopicPath = zk.getTempOffsetsSubPath("the_group", "the_topic");
 
         doNothing().when(zk).setLastCommit(anyString(), any(Partition.class), anyLong(), anyBoolean());
         doReturn(brokerIds).when(zk).getChildrenParentMayNotExist(brokerTopicPath);
-        doReturn(broker).when(zk).getBroker(1);
 
         final String tempOffsetPath1 = zk.getTempOffsetsPath("the_group", partition1);
         final String tempOffsetPath2 = zk.getTempOffsetsPath("the_group", partition2);
@@ -200,8 +195,8 @@ public class ZkUtilsTest {
         final Broker broker = new Broker("localhost", 9092, 1);
         final Partition partition = new Partition("topic_name", 0, broker);
         // consumer
-        assertEquals("/consumers/group_name/offsets/topic_name/1-0", zk.getOffsetsPath("group_name", partition));
-        assertEquals("/consumers/group_name/offsets-temp/topic_name/1-0",
+        assertEquals("/consumers/group_name/offsets/topic_name/0", zk.getOffsetsPath("group_name", partition));
+        assertEquals("/consumers/group_name/offsets-temp/topic_name/0",
                 zk.getTempOffsetsPath("group_name", partition));
         assertEquals("/consumers/group_name/offsets-temp/topic_name",
                 zk.getTempOffsetsSubPath("group_name", "topic_name"));
@@ -222,5 +217,10 @@ public class ZkUtilsTest {
         assertEquals("test", serDe.deserialize("test".getBytes()));
         assertArrayEquals("test".getBytes(), serDe.serialize("test"));
         assertEquals("test", serDe.deserialize(serDe.serialize("test")));
+    }
+
+    @Test
+    public void testCreatePathWithZkRoot(){
+        assertEquals("/brokers/topics/topic_name", zk.createPathWithZkRoot("brokers/topics/topic_name"));
     }
 }
