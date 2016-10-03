@@ -1,5 +1,7 @@
 package com.conductor.kafka.zk;
 
+import java.util.ArrayList;
+
 /**
  * Created by pbardocz on 8/4/15.
  */
@@ -7,6 +9,7 @@ public class BrokerJson {
 
     String jmx_port;
     String timestamp;
+    ArrayList<String> endpoints;
     String host;
     Integer port;
     String version;
@@ -25,6 +28,14 @@ public class BrokerJson {
 
     public void setTimestamp(String timestamp) {
         this.timestamp = timestamp;
+    }
+
+    public ArrayList<String> getEndpoints() {
+        return endpoints;
+    }
+
+    public void setEndpoints(ArrayList<String> endpoints) {
+        this.endpoints = endpoints;
     }
 
     public String getHost() {

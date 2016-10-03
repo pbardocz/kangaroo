@@ -219,6 +219,7 @@ public class ZkUtils implements Closeable {
         if (offset == null) {
             return -1L;
         }
+        LOG.debug("Last commited offset {}", offset);
         return Long.valueOf(offset);
     }
 
@@ -246,6 +247,7 @@ public class ZkUtils implements Closeable {
         if (!client.exists(path)) {
             client.createPersistent(path, true);
         }
+        LOG.debug("Setting last commit {} in zk path {}", commit, path);
         client.writeData(path, commit);
     }
 
