@@ -20,6 +20,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.util.*;
 
+import com.google.common.collect.Range;
 import org.I0Itec.zkclient.ZkClient;
 import org.I0Itec.zkclient.exception.ZkMarshallingError;
 import org.I0Itec.zkclient.exception.ZkNoNodeException;
@@ -36,7 +37,6 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Function;
 import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Ranges;
 
 /**
  * This class wraps some of the Kafka interactions with Zookeeper, namely {@link Broker} and {@link Partition} queries,
@@ -200,7 +200,7 @@ public class ZkUtils implements Closeable {
      */
     public boolean partitionExists(final Broker broker, final String topic, final int partId) {
         final String parts = client.readData(getTopicBrokerIdPath(topic, broker.getId()), true);
-        return !Strings.isNullOrEmpty(parts) && Ranges.closedOpen(0, Integer.parseInt(parts)).contains(partId);
+        return !Strings.isNullOrEmpty(parts) && Range.closedOpen(0, Integer.parseInt(parts)).contains(partId);
     }
 
     /**
