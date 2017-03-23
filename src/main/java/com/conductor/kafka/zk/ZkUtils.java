@@ -1,15 +1,15 @@
 /**
  * Copyright 2014 Conductor, Inc.
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
  * the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
  * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
  * specific language governing permissions and limitations under the License.
- * 
+ *
  */
 
 package com.conductor.kafka.zk;
@@ -20,7 +20,6 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.util.*;
 
-import com.google.common.collect.Range;
 import org.I0Itec.zkclient.ZkClient;
 import org.I0Itec.zkclient.exception.ZkMarshallingError;
 import org.I0Itec.zkclient.exception.ZkNoNodeException;
@@ -37,18 +36,19 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Function;
 import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Ranges;
 
 /**
  * This class wraps some of the Kafka interactions with Zookeeper, namely {@link Broker} and {@link Partition} queries,
  * as well as consumer group offset operations and queries.
- * 
+ *
  * <p/>
  * Thanks to <a href="https://github.com/miniway">Dongmin Yu</a> for providing the inspiration for this code.
- * 
+ *
  * <p/>
  * The original source code can be found <a target="_blank" href="https://github.com/miniway/kafka-hadoop-consumer">on
  * Github</a>.
- * 
+ *
  * @author <a href="mailto:cgreen@conductor.com">Casey Green</a>
  */
 public class ZkUtils implements Closeable {
@@ -200,7 +200,7 @@ public class ZkUtils implements Closeable {
      */
     public boolean partitionExists(final Broker broker, final String topic, final int partId) {
         final String parts = client.readData(getTopicBrokerIdPath(topic, broker.getId()), true);
-        return !Strings.isNullOrEmpty(parts) && Range.closedOpen(0, Integer.parseInt(parts)).contains(partId);
+        return !Strings.isNullOrEmpty(parts) && Ranges.closedOpen(0, Integer.parseInt(parts)).contains(partId);
     }
 
     /**
@@ -280,8 +280,7 @@ public class ZkUtils implements Closeable {
         });
     }
 
-    @VisibleForTesting
-    List<String> getChildrenParentMayNotExist(String path) {
+    public List<String> getChildrenParentMayNotExist(String path) {
         try {
             return client.getChildren(path);
         } catch (final ZkNoNodeException e) {
