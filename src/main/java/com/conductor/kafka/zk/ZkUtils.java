@@ -280,9 +280,22 @@ public class ZkUtils implements Closeable {
         });
     }
 
-    public List<String> getChildrenParentMayNotExist(String path) {
+    @VisibleForTesting
+    List<String> getChildrenParentMayNotExist(String path) {
         try {
             return client.getChildren(path);
+        } catch (final ZkNoNodeException e) {
+            return Lists.newArrayList();
+        }
+    }
+
+    /**
+     * @param path - zk node for which to get children
+     * @return - children for zk node, or empty List if node does not exist
+     */
+    public List<String> getChildren(String path) {
+        try {
+            return client.getChildren(createPathWithZkRoot(path));
         } catch (final ZkNoNodeException e) {
             return Lists.newArrayList();
         }
